@@ -2,13 +2,14 @@ import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 
 /**
- * Export array data as Excel file with bold headers, 14px font,
- * and sticky header row (using ExcelJS)
+ * Export array data as Excel (.xlsx) or CSV (.csv)
+ * with styled headers and sticky header row (for Excel).
  */
 export async function exportTableData<T extends Record<string, any>>(
   data: T[],
-  headerMap?: { [key: string]: string }, // optional custom mapping key→header
-  fileName: string = "export.xlsx"
+  headerMap?: { [key: string]: string }, // optional key→header mapping
+  fileName: string = "export",
+  format: "xlsx" | "csv" = "xlsx"
 ): Promise<void> {
   if (!data || data.length === 0) {
     console.warn("No data to export");
@@ -18,12 +19,13 @@ export async function exportTableData<T extends Record<string, any>>(
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet("Sheet1");
 
-  // Apply frozen header row (sticky)
-  worksheet.views = [{ state: "frozen", ySplit: 1 }];
+  // Only Excel supports freezing and styling
+  if (format === "xlsx") {
+    worksheet.views = [{ state: "frozen", ySplit: 1 }];
+  }
 
-  // Determine headers and map data
+  // Determine columns
   let columns: { header: string; key: string; width: number }[];
-
   if (headerMap) {
     columns = Object.keys(headerMap).map((key) => ({
       header: headerMap[key],
@@ -38,43 +40,53 @@ export async function exportTableData<T extends Record<string, any>>(
       width: 20,
     }));
   }
-
   worksheet.columns = columns;
 
-  // Add rows
+  // Add data
   data.forEach((item) => worksheet.addRow(item));
 
-  // Style header row
-  const headerRow = worksheet.getRow(1);
-  headerRow.font = { bold: true, size: 12 };
-  headerRow.alignment = { horizontal: "center", vertical: "middle" };
-  headerRow.height = 22;
-  headerRow.eachCell((cell) => {
-    cell.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FFE8E8E8" }, // light gray
-    };
-    cell.border = {
-      top: { style: "thin", color: { argb: "FFBFBFBF" } },
-      left: { style: "thin", color: { argb: "FFBFBFBF" } },
-      bottom: { style: "thin", color: { argb: "FFBFBFBF" } },
-      right: { style: "thin", color: { argb: "FFBFBFBF" } },
-    };
-  });
+  // Style headers (only if Excel)
+  if (format === "xlsx") {
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true, size: 12 };
+    headerRow.alignment = { horizontal: "center", vertical: "middle" };
+    headerRow.height = 22;
+    headerRow.eachCell((cell) => {
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFE8E8E8" },
+      };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFBFBFBF" } },
+        left: { style: "thin", color: { argb: "FFBFBFBF" } },
+        bottom: { style: "thin", color: { argb: "FFBFBFBF" } },
+        right: { style: "thin", color: { argb: "FFBFBFBF" } },
+      };
+    });
 
-  // Style data rows (font size 14)
-  worksheet.eachRow((row, rowNumber) => {
-    if (rowNumber !== 1) {
-      row.font = { size: 12 };
-    }
-  });
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber !== 1) {
+        row.font = { size: 12 };
+      }
+    });
+  }
 
-  // Export file as Blob
-  const buffer = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buffer], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
+  let blob: Blob;
 
-  saveAs(blob, fileName);
+  if (format === "xlsx") {
+    // Export Excel file
+    const buffer = await workbook.xlsx.writeBuffer();
+    blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+  } else {
+    // Export CSV file
+    const csvBuffer = await workbook.csv.writeBuffer({
+      sheetName: "Sheet1",
+    });
+    blob = new Blob([csvBuffer], { type: "text/csv;charset=utf-8;" });
+  }
+
+  saveAs(blob, `${fileName}.${format}`);
 }
